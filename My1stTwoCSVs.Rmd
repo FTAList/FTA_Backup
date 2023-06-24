@@ -1,0 +1,127 @@
+---
+title: "NYPD Shooting"
+author: "Michael Kilgore"
+date: "2023-06-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Racial characteristics of NY Shooting Data
+
+We start by pulling in the City of New York shooting data:
+
+```{r importData}
+library(tidyverse)
+shooting_data <- read_csv("https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD")
+clean_shot = select(shooting_data, BORO, VIC_RACE)
+clean_shot <- clean_shot %>% rename(bor = BORO, v_race = VIC_RACE)
+clean_shot$bor = as.factor(clean_shot$bor)
+clean_shot$v_race = as.factor(clean_shot$v_race)
+```
+
+### Data Summary and modifications
+We see how racial information was recorded in a data summary, 
+then modify it to match
+the "Asian - White - Hispanic - Black" demo information from the
+Furman Center data, which we'll import below.
+
+```{r simplify_race}
+count(clean_shot, v_race)
+clean_shot$v_race <- recode_factor(clean_shot$v_race, 'AMERICAN INDIAN/ALASKAN NATIVE' = "Native",
+   'ASIAN / PACIFIC ISLANDER' = "Asian", 
+   'BLACK' = "Black", 
+   'BLACK HISPANIC' = "Hispanic",
+   'UNKNOWN' = "Unknown", 
+   'WHITE' = "White", 
+   'WHITE HISPANIC' = "Hispanic")
+
+# Remove the handful of records that aren't in primary demo groups
+clean_shot_5 <- subset(clean_shot, v_race != "Native")
+clean_shot_4 <- subset(clean_shot_5, v_race != "Unknown")
+
+# Now generate borough-specific data frames
+Bronx_shot <- subset(clean_shot_4, bor == "BRONX")
+Brooklyn_shot <- subset(clean_shot_4, bor == "BROOKLYN")
+Manhattan_shot <- subset(clean_shot_4, bor == "MANHATTAN")
+Queens_shot <- subset(clean_shot_4, bor == "QUEENS")
+Staten_shot <- subset(clean_shot_4, bor == "STATEN ISLAND")
+
+# Next, generate percentages for each borough
+Bronx_pct <- count(Bronx_shot, v_race)
+Bronx_pct$n <- Bronx_pct$n/sum(Bronx_pct$n)
+Brooklyn_pct <- count(Brooklyn_shot, v_race)
+Brooklyn_pct$n <- Brooklyn_pct$n/sum(Brooklyn_pct$n)
+Manhattan_pct <- count(Manhattan_shot, v_race)
+Manhattan_pct$n <- Manhattan_pct$n/sum(Manhattan_pct$n)
+Queens_pct <- count(Queens_shot, v_race)
+Queens_pct$n <- Queens_pct$n/sum(Queens_pct$n)
+Staten_pct <- count(Staten_shot, v_race)
+Staten_pct$n <- Staten_pct$n/sum(Staten_pct$n)
+```
+## Determining Borough Demographics
+
+Now we gather some background demographic information by borough.
+
+```{r get_demo_data}
+demo_data <- read_csv("https://furmancenter.org/files/NDP/race_composition_data.csv")
+clean_demo = select(demo_data, Geography, pop_hispanic_pct, pop_non_hispanic_asian_pct, pop_non_hispanic_black_pct, pop_non_hispanic_white_pct)
+clean_demo <- clean_demo %>% rename(bor = Geography, hisp = pop_hispanic_pct, asian = pop_non_hispanic_asian_pct, black = pop_non_hispanic_black_pct, white = pop_non_hispanic_white_pct)
+
+# translate % strings to numeric
+clean_demo$hisp <- as.numeric(sub("%","",clean_demo$hisp))/100
+clean_demo$asian <- as.numeric(sub("%","",clean_demo$asian))/100
+clean_demo$black <- as.numeric(sub("%","",clean_demo$black))/100
+clean_demo$white <- as.numeric(sub("%","",clean_demo$white))/100
+
+# tidy these rows into borough-specific objects
+NYCdf <- clean_demo[1,] %>% pivot_longer(cols = 2:5)
+Bronxdf <- clean_demo[2,] %>% pivot_longer(cols = 2:5)
+Brooklyndf <- clean_demo[3,] %>% pivot_longer(cols = 2:5)
+Manhattandf <- clean_demo[4,] %>% pivot_longer(cols = 2:5)
+Queensdf  <- clean_demo[5,] %>% pivot_longer(cols = 2:5)
+StatenIslanddf <- clean_demo[6,] %>% pivot_longer(cols = 2:5)
+```
+
+## Comparing Shooting Victims to General Population
+
+And now we can compare the racial profile of NYC shooting victims,
+by borough, versus that borough's general demographics.
+
+```{r plot_pies}
+ShootLabels <- c('Asian', 'Black', 'Hispanic', 'White')
+ShootColors <- c("blue", "brown", "green", "white")
+FurmanLabels <- c('Hispanic', 'Asian', 'Black', 'White')
+FurmanColors <- c("green", "blue", "brown", "white")
+par(mfrow=c(1,2))
+pie(Bronx_pct$n, ShootLabels, main="Bronx shooting victims", col=ShootColors)
+pie(Bronxdf$value, FurmanLabels, main="Bronx demographics", col=FurmanColors)
+
+par(mfrow=c(1,2))
+pie(Brooklyn_pct$n, ShootLabels, main="Brooklyn shooting victims", col=ShootColors)
+pie(Brooklyndf$value, FurmanLabels, main="Brooklyn demographics", col=FurmanColors)
+
+par(mfrow=c(1,2))
+pie(Manhattan_pct$n, ShootLabels, main="Manhattan shooting victims", col=ShootColors)
+pie(Manhattandf$value, FurmanLabels, main="Manhattan demographics", col=FurmanColors)
+
+par(mfrow=c(1,2))
+pie(Queens_pct$n, ShootLabels, main="Queens shooting victims", col=ShootColors)
+pie(Queensdf$value, FurmanLabels, main="Queens demographics", col=FurmanColors)
+
+par(mfrow=c(1,2))
+pie(Staten_pct$n, ShootLabels, main="Queens shooting victims", col=ShootColors)
+pie(StatenIslanddf$value, FurmanLabels, main="Queens demographics", col=FurmanColors)
+
+```
+### Analysis
+
+In every borough, gun violence victims were more likely to be Black than members of the general population of that borough. White and Asian members of the general population were less likely to be gunshot victims.
+
+## Conclusion
+
+The data indicates that, in every borough, Black residents are more likely to be gun victims than White and Asian residents. In Manhattan, a higher percentage of Hispanics were victims compared to the percentage of Hispanics who live there. Otherwise, that percentage was lower that the standard Hispanic demographic percentage.
+
+Possible sources of bias include the systems used by New York City to discover and categorize shooting victims. It is also possible that some Asian and White victims decline to notify the authorities. My personal bias, based on media hype, was to expect a higher percentage of White victims, but that was not reflected in the data.
